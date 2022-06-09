@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-#MLP: multi layer perceptron, has a series of relu layers and activation layers.
+
 def make_mlp(dim_list, activation='relu', batch_norm=True, dropout=0):
     layers = []
     for dim_in, dim_out in zip(dim_list[:-1], dim_list[1:]):
@@ -24,7 +24,7 @@ def get_noise(shape, noise_type):
         return torch.rand(*shape).sub_(0.5).mul_(2.0).cuda()
     raise ValueError('Unrecognized noise type "%s"' % noise_type)
 
-#Uses built in pytorch LSTM modules as the encoder
+
 class Encoder(nn.Module):
     """Encoder is part of both TrajectoryGenerator and
     TrajectoryDiscriminator"""
@@ -43,14 +43,13 @@ class Encoder(nn.Module):
             embedding_dim, h_dim, num_layers, dropout=dropout
         )
 
-        self.spatial_embedding = nn.Linear(2, embedding_dim) #NEED FIX?
+        self.spatial_embedding = nn.Linear(2, embedding_dim)
 
     def init_hidden(self, batch):
         return (
             torch.zeros(self.num_layers, batch, self.h_dim).cuda(),
             torch.zeros(self.num_layers, batch, self.h_dim).cuda()
         )
-    #forward pass of LSTM training 
 
     def forward(self, obs_traj):
         """
@@ -59,20 +58,19 @@ class Encoder(nn.Module):
         Output:
         - final_h: Tensor of shape (self.num_layers, batch, self.h_dim)
         """
-        # Encode observed Trajectory with sptial embeddings of peoples location
+        # Encode observed Trajectory
         batch = obs_traj.size(1)
         obs_traj_embedding = self.spatial_embedding(obs_traj.view(-1, 2))
         obs_traj_embedding = obs_traj_embedding.view(
             -1, batch, self.embedding_dim
         )
         state_tuple = self.init_hidden(batch)
-        #the encoder is the LSTM that takes those arguments
         output, state = self.encoder(obs_traj_embedding, state_tuple)
         final_h = state[0]
         return final_h
 
 
-class Decoder(nn.Module): #REMOVE THIS 
+class Decoder(nn.Module):
     """Decoder is part of TrajectoryGenerator"""
     def __init__(
         self, seq_len, embedding_dim=64, h_dim=128, mlp_dim=1024, num_layers=1,
@@ -81,18 +79,17 @@ class Decoder(nn.Module): #REMOVE THIS
         neighborhood_size=2.0, grid_size=8
     ):
         super(Decoder, self).__init__()
-        
+
         self.seq_len = seq_len
         self.mlp_dim = mlp_dim
         self.h_dim = h_dim
         self.embedding_dim = embedding_dim
         self.pool_every_timestep = pool_every_timestep
-        #decoder is an lstm as well
+
         self.decoder = nn.LSTM(
             embedding_dim, h_dim, num_layers, dropout=dropout
         )
 
-        
         if pool_every_timestep:
             if pooling_type == 'pool_net':
                 self.pool_net = PoolHiddenNet(
@@ -201,7 +198,7 @@ class PoolHiddenNet(nn.Module):
         tensor = tensor.view(-1, col_len)
         return tensor
 
-    def forward(self, h_states, seq_start_end, end_pos): #FIX 1
+    def forward(self, h_states, seq_start_end, end_pos):
         """
         Inputs:
         - h_states: Tensor of shape (num_layers, batch, h_dim)
@@ -225,20 +222,9 @@ class PoolHiddenNet(nn.Module):
             curr_end_pos_2 = self.repeat(curr_end_pos, num_ped)
             curr_rel_pos = curr_end_pos_1 - curr_end_pos_2
             curr_rel_embedding = self.spatial_embedding(curr_rel_pos)
-            
             mlp_h_input = torch.cat([curr_rel_embedding, curr_hidden_1], dim=1)
             curr_pool_h = self.mlp_pre_pool(mlp_h_input)
-            print('curr_pool max')
             curr_pool_h = curr_pool_h.view(num_ped, num_ped, -1).max(1)[0]
-            print(curr_pool_h)
-            print(torch.size(curr_pool))
-            print('curr pool 2')
-
-            curr_pool_h = curr_pool_h.view(num_ped, num_ped, -1)
-            print(curr_pool_h) 
-            print(torch.size(curr_pool_h))
-            #batch x n x n x hidden dimension
-            #convolution matters on size of hidden dimensions
             pool_h.append(curr_pool_h)
         pool_h = torch.cat(pool_h, dim=0)
         return pool_h
@@ -401,7 +387,7 @@ class TrajectoryGenerator(nn.Module):
             dropout=dropout
         )
 
-        self.decoder = Decoder( #REMOVE THIS
+        self.decoder = Decoder(
             pred_len,
             embedding_dim=embedding_dim,
             h_dim=decoder_h_dim,
@@ -426,7 +412,6 @@ class TrajectoryGenerator(nn.Module):
                 activation=activation,
                 batch_norm=batch_norm
             )
-
         elif pooling_type == 'spool':
             self.pool_net = SocialPooling(
                 h_dim=encoder_h_dim,
@@ -499,17 +484,15 @@ class TrajectoryGenerator(nn.Module):
         return decoder_h
 
     def mlp_decoder_needed(self):
-        '''if (
+        if (
             self.noise_dim or self.pooling_type or
             self.encoder_h_dim != self.decoder_h_dim
         ):
             return True
         else:
-            return False'''
-        
-        return False
+            return False
 
-    def forward(self, obs_traj, obs_traj_rel, seq_start_end, user_noise=None): #MODIFY
+    def forward(self, obs_traj, obs_traj_rel, seq_start_end, user_noise=None):
         """
         Inputs:
         - obs_traj: Tensor of shape (obs_len, batch, 2)
@@ -522,12 +505,11 @@ class TrajectoryGenerator(nn.Module):
         """
         batch = obs_traj_rel.size(1)
         # Encode seq
-        final_encoder_h = self.encoder(obs_traj_rel) 
+        final_encoder_h = self.encoder(obs_traj_rel)
         # Pool States
         if self.pooling_type:
             end_pos = obs_traj[-1, :, :]
             pool_h = self.pool_net(final_encoder_h, seq_start_end, end_pos)
-            #CONVOLUTION ADDED
             # Construct input hidden states for decoder
             mlp_decoder_context_input = torch.cat(
                 [final_encoder_h.view(-1, self.encoder_h_dim), pool_h], dim=1)
@@ -564,7 +546,7 @@ class TrajectoryGenerator(nn.Module):
         return pred_traj_fake_rel
 
 
-class TrajectoryDiscriminator(nn.Module):#REMOVE THIS
+class TrajectoryDiscriminator(nn.Module):
     def __init__(
         self, obs_len, pred_len, embedding_dim=64, h_dim=64, mlp_dim=1024,
         num_layers=1, activation='relu', batch_norm=True, dropout=0.0,
