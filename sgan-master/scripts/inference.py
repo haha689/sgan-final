@@ -14,7 +14,7 @@ import torch
 import numpy as np
 import sys
 
-sys.path.insert(1, "/home/xinyilu/sgan-final/sgan-master")
+sys.path.insert(1, '/home/xinyilu/sgan-final/sgan-master')
 
 from attrdict import AttrDict
 
