@@ -42,6 +42,7 @@ class SGANInference(object):
         # obervation_length is the input length of the trajectory to this model
 
         path = model_path
+        print(path)
         # number of samples to draw to get the final predicted trajectory
         self.num_samples = 20
 
