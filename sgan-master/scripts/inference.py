@@ -12,9 +12,6 @@ import argparse
 import os
 import torch
 import numpy as np
-import sys
-
-sys.path.insert(1, '/home/xinyilu/sgan-final/sgan-master')
 
 from attrdict import AttrDict
 
@@ -176,7 +173,7 @@ def get_model_matrix(matrices):
 
 
 
-trajPlan = SGANInference("models/sgan-models/eth_8_model.pt")
+trajPlan = SGANInference("/home/xinyilu/sgan-final/sgan-master/models/sgan-models/eth_8_model.pt")
 generator = trajPlan.generator
 _args = trajPlan.args
 _args.batch_size = 1
