@@ -54,6 +54,8 @@ class SGANInference(object):
         
     def get_generator(self, checkpoint):
         args = AttrDict(checkpoint['args'])
+        print(args.noise_dim)
+        print(args.pooling_type)
         generator = TrajectoryGenerator(
             obs_len=args.obs_len,
             pred_len=args.pred_len,
