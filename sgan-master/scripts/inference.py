@@ -42,7 +42,6 @@ class SGANInference(object):
         # obervation_length is the input length of the trajectory to this model
 
         path = model_path
-        print(path)
         # number of samples to draw to get the final predicted trajectory
         self.num_samples = 20
 
@@ -54,8 +53,6 @@ class SGANInference(object):
         
     def get_generator(self, checkpoint):
         args = AttrDict(checkpoint['args'])
-        print(args.noise_dim)
-        print(args.pooling_type)
         generator = TrajectoryGenerator(
             obs_len=args.obs_len,
             pred_len=args.pred_len,
@@ -74,7 +71,6 @@ class SGANInference(object):
             neighborhood_size=args.neighborhood_size,
             grid_size=args.grid_size,
             batch_norm=args.batch_norm)
-        print(checkpoint['g_state'].keys())
         generator.load_state_dict(checkpoint['g_state'])
         generator.to(self.cuda)
         generator.eval()
