@@ -18,6 +18,7 @@ from attrdict import AttrDict
 from sgan.models import TrajectoryGenerator
 from sgan.losses import displacement_error, final_displacement_error
 from sgan.utils import relative_to_abs, get_dset_path
+from sgan.data.loader import data_loader
 
 
 parser = argparse.ArgumentParser()
@@ -167,9 +168,3 @@ def get_model_matrix(matrices):
         
         
     return model_matrix
-        
-
-
-
-
-

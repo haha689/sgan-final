@@ -10,6 +10,7 @@ _args = trajPlan.args
 _args.batch_size = 1
 sets = [0]
 _, loader = data_loader(_args, sets)
+num_of_predictions = 50
 
 for batch in loader:
     obs_traj, obs_traj_rel, ground_truth_list, mask_list, render_list, seq_start_end = batch
@@ -22,7 +23,7 @@ for batch in loader:
     traj_length = len(obs_traj[1])
     matrices = []
     predicted = obs_traj.transpose((1,0,2))
-    for j in range(50):
+    for j in range(num_of_predictions):
         sub_matrices = np.zeros((len(predicted),len(predicted),2))
         history = predicted
         predicted = trajPlan.evaluate(history)
