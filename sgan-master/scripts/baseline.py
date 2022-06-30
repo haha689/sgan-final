@@ -13,7 +13,7 @@ _, loader = data_loader(_args, sets)
 
 for batch in loader:
     obs_traj, obs_traj_rel, ground_truth_list, mask_list, render_list, seq_start_end = batch
-    ground_truth, mask, render, seq_start_end = ground_truth_list[0], mask_list[0], render_list[0], seq_start_end[0]
+    ground_truth, mask, render, seq_start_end = ground_truth_list[0], mask_list[0], render_list[0], seq_start_end[0] #batch_size = 1
     print(ground_truth)
     if np.sum(mask) == 0:
         print('not good batch')
