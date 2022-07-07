@@ -110,13 +110,13 @@ def get_dtypes(args):
 
 def main(args):
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_num
-    train_path = get_dset_path(args.dataset_name, 'train')
-    val_path = get_dset_path(args.dataset_name, 'val')
+    # train_path = get_dset_path(args.dataset_name, 'train')
+    # val_path = get_dset_path(args.dataset_name, 'val')
 
     long_dtype, float_dtype = get_dtypes(args)
 
     logger.info("Initializing train dataset")
-    train_path = [0]
+    train_path = [0, 2, 3, 4]
     val_path = [1]
     train_dset, train_loader = data_loader(args, train_path)
     logger.info("Initializing val dataset")
@@ -164,7 +164,7 @@ def main(args):
     if args.checkpoint_start_from is not None:
         restore_path = args.checkpoint_start_from
     elif args.restore_from_checkpoint == 1:
-        restore_path = os.path.join(args.output_dir,
+        restore_path = os.path.join(args.output_dir, 'checkpoints',
                                     '%s_with_model.pt' % args.checkpoint_name)
 
     if restore_path is not None and os.path.isfile(restore_path):
@@ -221,13 +221,6 @@ def main(args):
                 get_total_norm(generator.parameters())
             )
 
-
-            for p in generator.parameters():
-                if p.requires_grad:
-                    print(torch.sum(p.grad))
-            print(losses_g.item())
-            exit()
-
              
             if args.timing == 1:
                 torch.cuda.synchronize()
@@ -275,7 +268,7 @@ def main(args):
                 checkpoint['g_state'] = generator.state_dict()
                 checkpoint['g_optim_state'] = optimizer_g.state_dict()
                 checkpoint_path = os.path.join(
-                    args.output_dir, '%s_with_model.pt' % args.checkpoint_name
+                    args.output_dir, 'checkpoints', '%s_with_model.pt' % args.checkpoint_name
                 )
                 logger.info('Saving checkpoint to {}'.format(checkpoint_path))
                 torch.save(checkpoint, checkpoint_path)
