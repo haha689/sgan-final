@@ -292,18 +292,21 @@ def generator_step(args, batch, generator, optimizer_g):
     #ground_truth, mask, render, seq_start_end = ground_truth_list[0], mask_list[0], render_list[0], seq_start_end[0]
     outputs = generator(obs_traj, obs_traj_rel, seq_start_end)
     
-    #loss = torch.zeros(1).to(obs_traj)
-    loss = None
+    loss = torch.zeros(1).to(obs_traj)
+    l1_weight = 0.01
     for i in range(len(outputs)):
         output = outputs[i]
         ground_truth, mask = ground_truth_list[i], mask_list[i]
         ground_truth = torch.tensor(ground_truth).cuda()
         mask = torch.tensor(mask).cuda()
-        tmp_loss = torch.sum(torch.norm(output - ground_truth, dim = 2))
+        num_ped = len(mask)
+        l1_norm = sum(p.abs().sum for p in generator.parameters())
+        tmp_loss = (torch.sum(torch.mul(torch.norm(output - ground_truth, dim = 2), mask)) + l1_norm * l1_weight) / (torch.sum(mask))
         if loss is None:
             loss = tmp_loss
         else:
             loss += tmp_loss
+    loss /= len(outputs)
 
 
     optimizer_g.zero_grad()
@@ -321,8 +324,9 @@ def check_accuracy(args, loader, generator):
     
     generator.eval()
     total_loss = 0
+    count = 0
     with torch.no_grad():
-        for batch in loader:
+        for batch in loader: 
             obs_traj, obs_traj_rel, ground_truth_list, mask_list, render_list, seq_start_end = batch
             obs_traj = obs_traj.cuda()
             obs_traj_rel = obs_traj_rel.cuda()
@@ -335,10 +339,12 @@ def check_accuracy(args, loader, generator):
                 ground_truth, mask = ground_truth_list[i], mask_list[i]
                 ground_truth = torch.tensor(ground_truth).cuda()
                 mask = torch.tensor(mask).cuda()
-                loss_output += torch.sum(torch.norm(output - ground_truth, dim = 2))
+                num_ped = len(mask)
+                loss_output += torch.sum(torch.mul(torch.norm(output - ground_truth, dim = 2), mask)) / (torch.sum(mask))
             total_loss += loss_output.item()
+            count += len(outputs)
     generator.train()
-    return total_loss
+    return total_loss / count
 
 
 if __name__ == '__main__':

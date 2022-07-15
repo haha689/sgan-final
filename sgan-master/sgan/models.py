@@ -73,99 +73,6 @@ class Encoder(nn.Module):
         return final_h
 
 
-class Decoder(nn.Module): #REMOVE THIS 
-    """Decoder is part of TrajectoryGenerator"""
-    def __init__(
-        self, seq_len, embedding_dim=64, h_dim=128, mlp_dim=1024, num_layers=1,
-        pool_every_timestep=True, dropout=0.0, bottleneck_dim=1024,
-        activation='relu', batch_norm=True, pooling_type='pool_net',
-        neighborhood_size=2.0, grid_size=8
-    ):
-        super(Decoder, self).__init__()
-        
-        self.seq_len = seq_len
-        self.mlp_dim = mlp_dim
-        self.h_dim = h_dim
-        self.embedding_dim = embedding_dim
-        self.pool_every_timestep = pool_every_timestep
-        #decoder is an lstm as well
-        self.decoder = nn.LSTM(
-            embedding_dim, h_dim, num_layers, dropout=dropout
-        )
-
-        
-        if pool_every_timestep:
-            if pooling_type == 'pool_net':
-                self.pool_net = PoolHiddenNet(
-                    embedding_dim=self.embedding_dim,
-                    h_dim=self.h_dim,
-                    mlp_dim=mlp_dim,
-                    bottleneck_dim=bottleneck_dim,
-                    activation=activation,
-                    batch_norm=batch_norm,
-                    dropout=dropout
-                )
-            elif pooling_type == 'spool':
-                self.pool_net = SocialPooling(
-                    h_dim=self.h_dim,
-                    activation=activation,
-                    batch_norm=batch_norm,
-                    dropout=dropout,
-                    neighborhood_size=neighborhood_size,
-                    grid_size=grid_size
-                )
-
-            mlp_dims = [h_dim + bottleneck_dim, mlp_dim, h_dim]
-            self.mlp = make_mlp(
-                mlp_dims,
-                activation=activation,
-                batch_norm=batch_norm,
-                dropout=dropout
-            )
-
-        self.spatial_embedding = nn.Linear(2, embedding_dim)
-        self.hidden2pos = nn.Linear(h_dim, 2)
-
-    def forward(self, last_pos, last_pos_rel, state_tuple, seq_start_end):
-        """
-        Inputs:
-        - last_pos: Tensor of shape (batch, 2)
-        - last_pos_rel: Tensor of shape (batch, 2)
-        - state_tuple: (hh, ch) each tensor of shape (num_layers, batch, h_dim)
-        - seq_start_end: A list of tuples which delimit sequences within batch
-        Output:
-        - pred_traj: tensor of shape (self.seq_len, batch, 2)
-        """
-        batch = last_pos.size(0)
-        pred_traj_fake_rel = []
-        decoder_input = self.spatial_embedding(last_pos_rel)
-        decoder_input = decoder_input.view(1, batch, self.embedding_dim)
-
-        for _ in range(self.seq_len):
-            output, state_tuple = self.decoder(decoder_input, state_tuple)
-            rel_pos = self.hidden2pos(output.view(-1, self.h_dim))
-            curr_pos = rel_pos + last_pos
-
-            if self.pool_every_timestep:
-                decoder_h = state_tuple[0]
-                pool_h = self.pool_net(decoder_h, seq_start_end, curr_pos)
-                decoder_h = torch.cat(
-                    [decoder_h.view(-1, self.h_dim), pool_h], dim=1)
-                decoder_h = self.mlp(decoder_h)
-                decoder_h = torch.unsqueeze(decoder_h, 0)
-                state_tuple = (decoder_h, state_tuple[1])
-
-            embedding_input = rel_pos
-
-            decoder_input = self.spatial_embedding(embedding_input)
-            decoder_input = decoder_input.view(1, batch, self.embedding_dim)
-            pred_traj_fake_rel.append(rel_pos.view(batch, -1))
-            last_pos = curr_pos
-
-        pred_traj_fake_rel = torch.stack(pred_traj_fake_rel, dim=0)
-        return pred_traj_fake_rel, state_tuple[0]
-
-
 class PoolHiddenNet(nn.Module):
     """Pooling module as proposed in our paper"""
     def __init__(
@@ -209,7 +116,7 @@ class PoolHiddenNet(nn.Module):
         - seq_start_end: A list of tuples which delimit sequences within batch
         - end_pos: Tensor of shape (batch, 2)
         Output:
-        - pool_h: Tensor of shape (batch, bottleneck_dim)
+        - pool_h: List of shape (len(seq_start_end), )
         """
         pool_h = []
         for _, (start, end) in enumerate(seq_start_end):
@@ -237,127 +144,6 @@ class PoolHiddenNet(nn.Module):
             #batch x n x n x hidden dimension
             #convolution matters on size of hidden dimensions
             pool_h.append(curr_pool_h + curr_final_h)
-        return pool_h
-
-
-class SocialPooling(nn.Module):
-    """Current state of the art pooling mechanism:
-    http://cvgl.stanford.edu/papers/CVPR16_Social_LSTM.pdf"""
-    def __init__(
-        self, h_dim=64, activation='relu', batch_norm=True, dropout=0.0,
-        neighborhood_size=2.0, grid_size=8, pool_dim=None
-    ):
-        super(SocialPooling, self).__init__()
-        self.h_dim = h_dim
-        self.grid_size = grid_size
-        self.neighborhood_size = neighborhood_size
-        if pool_dim:
-            mlp_pool_dims = [grid_size * grid_size * h_dim, pool_dim]
-        else:
-            mlp_pool_dims = [grid_size * grid_size * h_dim, h_dim]
-
-        self.mlp_pool = make_mlp(
-            mlp_pool_dims,
-            activation=activation,
-            batch_norm=batch_norm,
-            dropout=dropout
-        )
-
-    def get_bounds(self, ped_pos):
-        top_left_x = ped_pos[:, 0] - self.neighborhood_size / 2
-        top_left_y = ped_pos[:, 1] + self.neighborhood_size / 2
-        bottom_right_x = ped_pos[:, 0] + self.neighborhood_size / 2
-        bottom_right_y = ped_pos[:, 1] - self.neighborhood_size / 2
-        top_left = torch.stack([top_left_x, top_left_y], dim=1)
-        bottom_right = torch.stack([bottom_right_x, bottom_right_y], dim=1)
-        return top_left, bottom_right
-
-    def get_grid_locations(self, top_left, other_pos):
-        cell_x = torch.floor(
-            ((other_pos[:, 0] - top_left[:, 0]) / self.neighborhood_size) *
-            self.grid_size)
-        cell_y = torch.floor(
-            ((top_left[:, 1] - other_pos[:, 1]) / self.neighborhood_size) *
-            self.grid_size)
-        grid_pos = cell_x + cell_y * self.grid_size
-        return grid_pos
-
-    def repeat(self, tensor, num_reps):
-        """
-        Inputs:
-        -tensor: 2D tensor of any shape
-        -num_reps: Number of times to repeat each row
-        Outpus:
-        -repeat_tensor: Repeat each row such that: R1, R1, R2, R2
-        """
-        col_len = tensor.size(1)
-        tensor = tensor.unsqueeze(dim=1).repeat(1, num_reps, 1)
-        tensor = tensor.view(-1, col_len)
-        return tensor
-
-    def forward(self, h_states, seq_start_end, end_pos):
-        """
-        Inputs:
-        - h_states: Tesnsor of shape (num_layers, batch, h_dim)
-        - seq_start_end: A list of tuples which delimit sequences within batch.
-        - end_pos: Absolute end position of obs_traj (batch, 2)
-        Output:
-        - pool_h: Tensor of shape (batch, h_dim)
-        """
-        pool_h = []
-        for _, (start, end) in enumerate(seq_start_end):
-            start = start.item()
-            end = end.item()
-            num_ped = end - start
-            grid_size = self.grid_size * self.grid_size
-            curr_hidden = h_states.view(-1, self.h_dim)[start:end]
-            curr_hidden_repeat = curr_hidden.repeat(num_ped, 1)
-            curr_end_pos = end_pos[start:end]
-            curr_pool_h_size = (num_ped * grid_size) + 1
-            curr_pool_h = curr_hidden.new_zeros((curr_pool_h_size, self.h_dim))
-            # curr_end_pos = curr_end_pos.data
-            top_left, bottom_right = self.get_bounds(curr_end_pos)
-
-            # Repeat position -> P1, P2, P1, P2
-            curr_end_pos = curr_end_pos.repeat(num_ped, 1)
-            # Repeat bounds -> B1, B1, B2, B2
-            top_left = self.repeat(top_left, num_ped)
-            bottom_right = self.repeat(bottom_right, num_ped)
-
-            grid_pos = self.get_grid_locations(
-                    top_left, curr_end_pos).type_as(seq_start_end)
-            # Make all positions to exclude as non-zero
-            # Find which peds to exclude
-            x_bound = ((curr_end_pos[:, 0] >= bottom_right[:, 0]) +
-                       (curr_end_pos[:, 0] <= top_left[:, 0]))
-            y_bound = ((curr_end_pos[:, 1] >= top_left[:, 1]) +
-                       (curr_end_pos[:, 1] <= bottom_right[:, 1]))
-
-            within_bound = x_bound + y_bound
-            within_bound[0::num_ped + 1] = 1  # Don't include the ped itself
-            within_bound = within_bound.view(-1)
-
-            # This is a tricky way to get scatter add to work. Helps me avoid a
-            # for loop. Offset everything by 1. Use the initial 0 position to
-            # dump all uncessary adds.
-            grid_pos += 1
-            total_grid_size = self.grid_size * self.grid_size
-            offset = torch.arange(
-                0, total_grid_size * num_ped, total_grid_size
-            ).type_as(seq_start_end)
-
-            offset = self.repeat(offset.view(-1, 1), num_ped).view(-1)
-            grid_pos += offset
-            grid_pos[within_bound != 0] = 0
-            grid_pos = grid_pos.view(-1, 1).expand_as(curr_hidden_repeat)
-
-            curr_pool_h = curr_pool_h.scatter_add(0, grid_pos,
-                                                  curr_hidden_repeat)
-            curr_pool_h = curr_pool_h[1:]
-            pool_h.append(curr_pool_h.view(num_ped, -1))
-
-        pool_h = torch.cat(pool_h, dim=0)
-        pool_h = self.mlp_pool(pool_h)
         return pool_h
 
 
@@ -394,6 +180,7 @@ class TrajectoryGenerator(nn.Module):
         self.conv2 = torch.nn.Conv2d(self.conv_hidden_dim,self.conv_hidden_dim,1)
         self.conv3 = torch.nn.Conv2d(self.conv_hidden_dim,self.conv_output_dim,1)
         self.relu_activation = torch.nn.ReLU()
+        self.dropout = nn.Dropout(0.2)
 
         self.encoder = Encoder(
             embedding_dim=embedding_dim,
@@ -507,7 +294,7 @@ class TrajectoryGenerator(nn.Module):
         - user_noise: Generally used for inference when you want to see
         relation between different types of noise and outputs.
         Output:
-        - pred_traj_rel: Tensor of shape (self.pred_len, batch, 2)
+        - outputs: List of shape (len(seq_start_end), )
         """
         batch = obs_traj_rel.size(1)
         # Encode seq
@@ -524,84 +311,21 @@ class TrajectoryGenerator(nn.Module):
            # tensor_h = torch.unsqueeze(tensor_h,0)
             tensor_conv1 = torch.permute(tensor_h, (2, 0, 1))
             tensor_conv1 = self.relu_activation(self.conv1(tensor_conv1))
+            tensor_conv1 = self.dropout(tensor_conv1)
             tensor_conv1 = torch.permute(tensor_conv1, (1, 2, 0))
             tensor_conv1 = self.conv_pool(tensor_conv1,num_ped)
 
             tensor_conv2 = torch.permute(tensor_conv1, (2, 0, 1))
             tensor_conv2 = self.relu_activation(self.conv2(tensor_conv2))
+            tensor_conv2 = self.dropout(tensor_conv2)
             tensor_conv2 = torch.permute(tensor_conv2, (1, 2, 0))
             tensor_conv2 = self.conv_pool(tensor_conv2,num_ped)
 
             tensor_conv3 = torch.permute(tensor_conv2, (2, 0, 1))
             tensor_conv3 = self.conv3(tensor_conv3)
+            tensor_conv3 = self.dropout(tensor_conv3)
             tensor_conv3 = torch.permute(tensor_conv3, (1, 2, 0))
 
             outputs.append(tensor_conv3)
 
         return outputs 
-    
-
-
-class TrajectoryDiscriminator(nn.Module):#REMOVE THIS
-    def __init__(
-        self, obs_len, pred_len, embedding_dim=64, h_dim=64, mlp_dim=1024,
-        num_layers=1, activation='relu', batch_norm=True, dropout=0.0,
-        d_type='local'
-    ):
-        super(TrajectoryDiscriminator, self).__init__()
-
-        self.obs_len = obs_len
-        self.pred_len = pred_len
-        self.seq_len = obs_len + pred_len
-        self.mlp_dim = mlp_dim
-        self.h_dim = h_dim
-        self.d_type = d_type
-
-        self.encoder = Encoder(
-            embedding_dim=embedding_dim,
-            h_dim=h_dim,
-            mlp_dim=mlp_dim,
-            num_layers=num_layers,
-            dropout=dropout
-        )
-
-        real_classifier_dims = [h_dim, mlp_dim, 1]
-        self.real_classifier = make_mlp(
-            real_classifier_dims,
-            activation=activation,
-            batch_norm=batch_norm,
-            dropout=dropout
-        )
-        if d_type == 'global':
-            mlp_pool_dims = [h_dim + embedding_dim, mlp_dim, h_dim]
-            self.pool_net = PoolHiddenNet(
-                embedding_dim=embedding_dim,
-                h_dim=h_dim,
-                mlp_dim=mlp_pool_dims,
-                bottleneck_dim=h_dim,
-                activation=activation,
-                batch_norm=batch_norm
-            )
-
-    def forward(self, traj, traj_rel, seq_start_end=None):
-        """
-        Inputs:
-        - traj: Tensor of shape (obs_len + pred_len, batch, 2)
-        - traj_rel: Tensor of shape (obs_len + pred_len, batch, 2)
-        - seq_start_end: A list of tuples which delimit sequences within batch
-        Output:
-        - scores: Tensor of shape (batch,) with real/fake scores
-        """
-        final_h = self.encoder(traj_rel)
-        # Note: In case of 'global' option we are using start_pos as opposed to
-        # end_pos. The intution being that hidden state has the whole
-        # trajectory and relative postion at the start when combined with
-        # trajectory information should help in discriminative behavior.
-        if self.d_type == 'local':
-            classifier_input = final_h.squeeze()
-        else:
-            classifier_input = self.pool_net(
-                final_h.squeeze(), seq_start_end, traj[0]
-            )
-        scores = self.real_classifier(classifier_input)
-        return scores
