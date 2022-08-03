@@ -15,10 +15,9 @@ import numpy as np
 
 from attrdict import AttrDict
 
-from sgan.models import TrajectoryGenerator
+from sgan.original_models import TrajectoryGenerator
 from sgan.losses import displacement_error, final_displacement_error
 from sgan.utils import relative_to_abs, get_dset_path
-from sgan.data.loader import data_loader
 
 
 parser = argparse.ArgumentParser()
@@ -120,11 +119,12 @@ class SGANInference(object):
 
 
 
-def computeDistances(pred_traj,n):
+def computeDistances(pred_traj,n,num_iter):
 
     num_people = len(pred_traj)
     time_steps = len(pred_traj[0])
     xy_cors = [[100,100] for x in range(num_people) ]
+    interaction_time = [100] * num_people 
 
     n_traj = pred_traj[n]
     
@@ -136,11 +136,13 @@ def computeDistances(pred_traj,n):
             index = dist.argmin()
             sx, sy = rel_pos[index]
             xy_cors[i][0], xy_cors[i][1] = sx,sy 
-    return xy_cors
+            interaction_time[i] = num_iter * 8 + index + 1
+    return xy_cors, interaction_time
 
 
-def get_model_matrix(matrices):
+def get_model_matrix(matrices, times):
     model_matrix = np.zeros((len(matrices[0]),len(matrices[0]),2))
+    time = np.zeros((len(matrices[0]),len(matrices[0])))
     time_len = np.shape(matrices)[0]
     num_ppl = np.shape(matrices)[1]
 
@@ -152,6 +154,7 @@ def get_model_matrix(matrices):
                 if dist < min_dist:
                     model_matrix[i, j] = matrices[t, i, j, :]
                     min_dist = dist
+                    time[i, j] = times[t, i, j]
 
     """
     for i in range(len(matrices[0])):
@@ -167,4 +170,4 @@ def get_model_matrix(matrices):
     """
         
         
-    return model_matrix
+    return model_matrix, time

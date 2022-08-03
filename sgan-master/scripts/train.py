@@ -15,7 +15,7 @@ from sgan.data.loader import data_loader
 from sgan.losses import gan_g_loss, gan_d_loss, l2_loss
 from sgan.losses import displacement_error, final_displacement_error
 
-from sgan.models import TrajectoryGenerator, TrajectoryDiscriminator
+from sgan.models import TrajectoryGenerator
 from sgan.utils import int_tuple, bool_flag, get_total_norm
 from sgan.utils import relative_to_abs, get_dset_path
 
@@ -116,8 +116,8 @@ def main(args):
     long_dtype, float_dtype = get_dtypes(args)
 
     logger.info("Initializing train dataset")
-    train_path = [0, 2, 3, 4]
-    val_path = [1]
+    train_path = [1, 2, 3, 4]
+    val_path = [0]
     train_dset, train_loader = data_loader(args, train_path)
     logger.info("Initializing val dataset")
     _, val_loader = data_loader(args, val_path)
@@ -290,27 +290,54 @@ def generator_step(args, batch, generator, optimizer_g):
     obs_traj = obs_traj.cuda()
     obs_traj_rel = obs_traj_rel.cuda()
     #ground_truth, mask, render, seq_start_end = ground_truth_list[0], mask_list[0], render_list[0], seq_start_end[0]
-    outputs = generator(obs_traj, obs_traj_rel, seq_start_end)
+    outputs, times = generator(obs_traj, obs_traj_rel, seq_start_end)
     
     loss = torch.zeros(1).to(obs_traj)
-    l1_weight = 0.01
+    reg_weight = 1.0
+    count = 0
     for i in range(len(outputs)):
         output = outputs[i]
+        time = times[i]
         ground_truth, mask = ground_truth_list[i], mask_list[i]
         ground_truth = torch.tensor(ground_truth).cuda()
         mask = torch.tensor(mask).cuda()
-        num_ped = len(mask)
-        l1_norm = sum(p.abs().sum for p in generator.parameters())
-        tmp_loss = (torch.sum(torch.mul(torch.norm(output - ground_truth, dim = 2), mask)) + l1_norm * l1_weight) / (torch.sum(mask))
+        future_mask = mask > 0
+        if (torch.sum(future_mask) == 0):
+            continue
+        count += 1
+        #mask2 = torch.unsqueeze(mask, 2)
+        #mask2 = mask2.repeat(1, 1, 2)
+        #reg = torch.sum(torch.mul(torch.mul(reg_weight, torch.abs(output - \
+         #torch.transpose(torch.mul(-1, output), 0, 1))), mask2))
+        pred_x = output[:, :, 0]
+        pred_y = output[:, :, 1]
+        x_std = output[:, :, 2]
+        y_std = output[:, :, 3]
+        cov = output[:, :, 4]
+        true_x = ground_truth[:, :, 0]
+        true_y = ground_truth[:, :, 1]
+        diff_x = pred_x - true_x 
+        diff_y = pred_y - true_y
+        output_loss = torch.sum((x_std * (diff_x ** 2) + y_std * (diff_y ** 2) + 2 * cov * diff_x * diff_y) * future_mask) / (torch.sum(future_mask))
+
+        pred_t = time[:, :, 0]
+        t_std = time[:, :, 1]
+        t_diff = pred_t - mask
+        time_loss = torch.sum((t_diff ** 2) / (2 * t_std ** 2)) / (len(mask) ** 2)
+        #time_loss = torch.sum((time - mask) ** 2) / (len(mask) ** 2)
+        #output_loss = torch.sum(torch.mul(torch.norm(output - ground_truth, dim = 2), future_mask)) / (torch.sum(future_mask))
+        tmp_loss = time_loss + output_loss
         if loss is None:
             loss = tmp_loss
         else:
             loss += tmp_loss
-    loss /= len(outputs)
-
+    loss /= count
 
     optimizer_g.zero_grad()
     loss.backward()
+    #for p in generator.parameters():
+        #print(p.grad.norm())
+    #print('\n')
     if args.clipping_threshold_g > 0:
         nn.utils.clip_grad_norm_(
             generator.parameters(), args.clipping_threshold_g
@@ -331,18 +358,38 @@ def check_accuracy(args, loader, generator):
             obs_traj = obs_traj.cuda()
             obs_traj_rel = obs_traj_rel.cuda()
             #ground_truth, mask, render, seq_start_end = ground_truth_list[0], mask_list[0], render_list[0], seq_start_end[0]
-            outputs = generator(obs_traj, obs_traj_rel, seq_start_end)
+            outputs, times = generator(obs_traj, obs_traj_rel, seq_start_end)
             
             loss_output = torch.zeros(1).to(obs_traj)
             for i in range(len(outputs)):
                 output = outputs[i]
+                time = times[i]
                 ground_truth, mask = ground_truth_list[i], mask_list[i]
                 ground_truth = torch.tensor(ground_truth).cuda()
                 mask = torch.tensor(mask).cuda()
-                num_ped = len(mask)
-                loss_output += torch.sum(torch.mul(torch.norm(output - ground_truth, dim = 2), mask)) / (torch.sum(mask))
+                future_mask = mask > 0
+                if (torch.sum(future_mask) == 0):
+                    continue
+                count += 1
+                pred_x = output[:, :, 0]
+                pred_y = output[:, :, 1]
+                x_std = output[:, :, 2]
+                y_std = output[:, :, 3]
+                cov = output[:, :, 4]
+                true_x = ground_truth[:, :, 0]
+                true_y = ground_truth[:, :, 1]
+                diff_x = pred_x - true_x 
+                diff_y = pred_y - true_y
+                output_loss = torch.sum((x_std * (diff_x ** 2) + y_std * (diff_y ** 2) + 2 * cov * diff_x * diff_y) * future_mask) / torch.sum(future_mask)
+
+                pred_t = time[:, :, 0]
+                t_std = time[:, :, 1]
+                t_diff = pred_t - mask
+                time_loss = torch.sum((t_diff ** 2) / (2 * t_std ** 2)) / (len(mask) ** 2)
+                #time_loss = torch.sum((time - mask) ** 2) / (len(mask) ** 2)
+                #output_loss = torch.sum(torch.mul(torch.norm(output - ground_truth, dim = 2), future_mask)) / (torch.sum(future_mask))
+                loss_output += time_loss + output_loss
             total_loss += loss_output.item()
-            count += len(outputs)
     generator.train()
     return total_loss / count
 
