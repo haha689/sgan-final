@@ -256,8 +256,9 @@ class TrajectoryDataset(Dataset):
                                 if key in self.interaction_info.keys():
                                     adj_matrix[i, j] = self.interaction_info[key][0]
                                     interaction_frame = self.interaction_info[key][1]
-                                    if interaction_frame >= (f + seq_len):
-                                        future_mask[i, j] = 1
+                                    future_mask[i, j] = interaction_frame - (f + seq_len)
+                                    #if interaction_frame >= (f + seq_len):
+                                        #future_mask[i, j] = 1
                                 else:
                                     print(key)
                                     raise Exception("Key doesn't exist: not possible!")
