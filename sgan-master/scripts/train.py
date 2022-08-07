@@ -1,6 +1,7 @@
 import argparse
 import gc
 import logging
+from operator import matmul
 import os
 import sys
 import time
@@ -309,6 +310,16 @@ def generator_step(args, batch, generator, optimizer_g):
         #mask2 = mask2.repeat(1, 1, 2)
         #reg = torch.sum(torch.mul(torch.mul(reg_weight, torch.abs(output - \
          #torch.transpose(torch.mul(-1, output), 0, 1))), mask2))
+        '''pred_x_y = output[:, :, 0:2]
+        x_std = output[:, :, 2:3] ** 2
+        y_std = output[:, :, 3:4] ** 2
+        cov = output[:, :, 4:5] ** 2
+        diff =  ground_truth - pred_x_y
+        diff = torch.unsqueeze(diff, 3)
+        tmp1 = torch.cat((x_std, cov), dim = 2)
+        tmp2 = torch.cat((cov, y_std), dim = 2)
+        sigma = torch.stack((tmp1, tmp2), dim = 2)
+        output_loss = torch.sum(torch.matmul(torch.matmul(torch.transpose(diff, 2, 3), sigma.double()), diff) * future_mask) / (2 * torch.sum(future_mask)) '''
         pred_x = output[:, :, 0]
         pred_y = output[:, :, 1]
         x_std = output[:, :, 2]
@@ -318,7 +329,7 @@ def generator_step(args, batch, generator, optimizer_g):
         true_y = ground_truth[:, :, 1]
         diff_x = pred_x - true_x 
         diff_y = pred_y - true_y
-        output_loss = torch.sum((x_std * (diff_x ** 2) + y_std * (diff_y ** 2) + 2 * cov * diff_x * diff_y) * future_mask) / (torch.sum(future_mask))
+        output_loss = torch.sum(((x_std ** 2) * (diff_x ** 2) + (y_std ** 2) * (diff_y ** 2) + 2 * (cov ** 2) * torch.abs(diff_x * diff_y)) * future_mask) / (torch.sum(future_mask))
 
         pred_t = time[:, :, 0]
         t_std = time[:, :, 1]
@@ -343,7 +354,6 @@ def generator_step(args, batch, generator, optimizer_g):
             generator.parameters(), args.clipping_threshold_g
         )
     optimizer_g.step()
-
     return loss
 
 
@@ -380,7 +390,7 @@ def check_accuracy(args, loader, generator):
                 true_y = ground_truth[:, :, 1]
                 diff_x = pred_x - true_x 
                 diff_y = pred_y - true_y
-                output_loss = torch.sum((x_std * (diff_x ** 2) + y_std * (diff_y ** 2) + 2 * cov * diff_x * diff_y) * future_mask) / torch.sum(future_mask)
+                output_loss = torch.sum(((x_std ** 2) * (diff_x ** 2) + (y_std ** 2) * (diff_y ** 2) + 2 * (cov ** 2) * torch.abs(diff_x * diff_y)) * future_mask) / (torch.sum(future_mask))
 
                 pred_t = time[:, :, 0]
                 t_std = time[:, :, 1]

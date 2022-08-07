@@ -312,8 +312,8 @@ class TrajectoryGenerator(nn.Module):
             num_ped = end - start
            # tensor_h = torch.unsqueeze(tensor_h,0)
             tensor_conv1 = torch.permute(tensor_h, (2, 0, 1))
-            tensor_conv1 = self.conv1(tensor_conv1)
             tensor_conv1 = torch.unsqueeze(tensor_conv1, 0)
+            tensor_conv1 = self.conv1(tensor_conv1)
             tensor_conv1 = self.conv1_bn(tensor_conv1)
             tensor_conv1 = torch.squeeze(tensor_conv1, 0)
             tensor_conv1 = self.relu_activation(tensor_conv1)
@@ -322,8 +322,8 @@ class TrajectoryGenerator(nn.Module):
             tensor_conv1 = self.conv_pool(tensor_conv1,num_ped)
 
             tensor_conv2 = torch.permute(tensor_conv1, (2, 0, 1))
-            tensor_conv2 = self.conv2(tensor_conv2)
             tensor_conv2 = torch.unsqueeze(tensor_conv2, 0)
+            tensor_conv2 = self.conv2(tensor_conv2)
             tensor_conv2 = self.conv2_bn(tensor_conv2)
             tensor_conv2 = torch.squeeze(tensor_conv2, 0)
             tensor_conv2 = self.relu_activation(tensor_conv2)
@@ -332,16 +332,16 @@ class TrajectoryGenerator(nn.Module):
             tensor_conv2 = self.conv_pool(tensor_conv2,num_ped)
 
             tensor_conv3 = torch.permute(tensor_conv2, (2, 0, 1))
-            tensor_conv3 = self.conv3(tensor_conv3)
             tensor_conv3 = torch.unsqueeze(tensor_conv3, 0)
+            tensor_conv3 = self.conv3(tensor_conv3)
             tensor_conv3 = self.conv3_bn(tensor_conv3)
             tensor_conv3 = torch.squeeze(tensor_conv3, 0)
             #tensor_conv3 = self.dropout(tensor_conv3)
             tensor_conv3 = torch.permute(tensor_conv3, (1, 2, 0))
 
             tensor_conv4 = torch.permute(tensor_conv2, (2, 0, 1))
-            tensor_conv4 = self.conv4(tensor_conv4)
             tensor_conv4 = torch.unsqueeze(tensor_conv4, 0)
+            tensor_conv4 = self.conv4(tensor_conv4)
             tensor_conv4 = self.conv4_bn(tensor_conv4)
             tensor_conv4 = torch.squeeze(tensor_conv4, 0)
             #tensor_conv4 = self.dropout(tensor_conv4)
