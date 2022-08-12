@@ -117,8 +117,8 @@ def main(args):
     long_dtype, float_dtype = get_dtypes(args)
 
     logger.info("Initializing train dataset")
-    train_path = [1, 2, 3, 4]
-    val_path = [0]
+    train_path = [0, 2, 3, 4]
+    val_path = [1]
     train_dset, train_loader = data_loader(args, train_path)
     logger.info("Initializing val dataset")
     _, val_loader = data_loader(args, val_path)
@@ -329,7 +329,7 @@ def generator_step(args, batch, generator, optimizer_g):
         true_y = ground_truth[:, :, 1]
         diff_x = pred_x - true_x 
         diff_y = pred_y - true_y
-        output_loss = torch.sum(((x_std ** 2) * (diff_x ** 2) + (y_std ** 2) * (diff_y ** 2) + 2 * (cov ** 2) * torch.abs(diff_x * diff_y)) * future_mask) / (torch.sum(future_mask))
+        output_loss = torch.sum(((x_std ** 2) * (diff_x ** 2) + (y_std ** 2) * (diff_y ** 2) + 2 * (cov ** 2) * torch.tanh(diff_x * diff_y)) * future_mask) / (torch.sum(future_mask))
 
         pred_t = time[:, :, 0]
         t_std = time[:, :, 1]
@@ -390,7 +390,7 @@ def check_accuracy(args, loader, generator):
                 true_y = ground_truth[:, :, 1]
                 diff_x = pred_x - true_x 
                 diff_y = pred_y - true_y
-                output_loss = torch.sum(((x_std ** 2) * (diff_x ** 2) + (y_std ** 2) * (diff_y ** 2) + 2 * (cov ** 2) * torch.abs(diff_x * diff_y)) * future_mask) / (torch.sum(future_mask))
+                output_loss = torch.sum(((x_std ** 2) * (diff_x ** 2) + (y_std ** 2) * (diff_y ** 2) + 2 * (cov ** 2) * torch.tanh(diff_x * diff_y)) * future_mask) / (torch.sum(future_mask))
 
                 pred_t = time[:, :, 0]
                 t_std = time[:, :, 1]
